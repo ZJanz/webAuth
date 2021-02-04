@@ -1,11 +1,18 @@
+require('dotenv').config()
+
 const argon2 = require('argon2');
 const readline = require('readline')
 const express = require('express');
+const path = require('path');
 const app = express();
 const mysql   = require('mysql');
 const bodyParser = require('body-parser');
+const jwt = require('jsonwebtoken');
 
 app.use(bodyParser.urlencoded({extended: true}));
+
+app.use(express.static(path.join(__dirname, 'public')));
+
 
 
 
@@ -25,6 +32,8 @@ db.connect((err) => {
 	}
 	console.log("MySql Connected....")
 });
+
+
 
 
 // const rl = readline.createInterface({
@@ -47,7 +56,13 @@ async function createAccount(email, username, password){
 		if(err) throw err;
 		console.log(result);
 	});
-	return (`${email} ${username} ${hash} `)
+	
+	let sql2 = `INSERT INTO players VALUES(DEFAULT, '${username}', 2000, 2000, 0, 10, null)`
+	let query2 = db.query(sql2, (err, result)=> {
+		if(err) throw err;
+		console.log(result);
+	});
+
 }
 
 // app.get('/signup/:email/:username/:password', (req,res) => {
@@ -55,16 +70,18 @@ async function createAccount(email, username, password){
 // 	res.send(`${req.params.email}, ${req.params.username}, ${req.params.password}`)
 // });
 
-
+var access=false;
 async function signIn(email, username, password, hash){
 	
 		try {
 	  		if (await argon2.verify(hash, password)) {
 	    	// password match
+	    	access=true;
 	    	console.log("Password Matched")
 	  			} else {
 	    	// password did not match
 	    	console.log("Password didn't match")
+	    	access=false;
 	  			}
 			} 
 			catch (err) {
@@ -93,12 +110,22 @@ app.post("/signintoaccount", (req,res)=>{
 
 	let query = db.query(sql, (err, result)=> {
 		if(err) {throw err;} else{
-			signIn(req.body.email, req.body.username, req.body.password, result[0].password)
+			signIn(req.body.email, req.body.username, req.body.password, result[0].password).then(() => {
+				if(access===true){
+					const username = req.body.username
+					const user = {name: username}
+
+					const accessToken = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET)
+					res.render("loginSuccess.ejs", {accessToken: accessToken})
+				} else{
+					res.send("wrong password")
+				}
+			})
+			
 		}
 	});
 
 
-	res.redirect("/getaccounts")
 })
 
 app.get("/signup", (req,res) => {
@@ -111,7 +138,7 @@ app.post("/createaccount", (req,res)=>{
 })
 
 app.get("/getaccounts", (req,res) => {
-	let sql = 'SELECT username FROM accounts'
+	let sql = 'SELECT * FROM accounts'
 	let query = db.query(sql, (err, result) => {
 		if(err) throw err;
 		console.log(result)
@@ -119,17 +146,49 @@ app.get("/getaccounts", (req,res) => {
 	})
 })
 
+app.get("/posts", (req,res)=>{
+	let sql = 'SELECT * FROM posts'
+	let query = db.query(sql, (err, result) => {
+		if(err) throw err;
+		console.log(result)
+		res.render("posts.ejs", {posts:result})
+	})
+})
+
+//add authenticateToken
+app.post("/createpost", (req,res)=>{
+	createPost(req.body.username, req.body.title, req.body.content)
+	res.redirect("/posts")
+})
+
+
+function createPost(username, title, content){
+
+}
+
+function authenticateToken(req, res, next) {
+	const authHeader = req.headers['authorization']
+	const token = authHeader && authHeader.split(' ')[1]
+	if (token == null) return res.sendStatus(401)
+
+	jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, user) => {
+		if (err) return res.sendStatus(403)
+		req.user = user
+		next()
+	})
+}
 
 
 
-// app.get('/createtable', (req,res) => {
-// let sql ='CREATE TABLE accounts(id int AUTO_INCREMENT, email VARCHAR(255), username VARCHAR(255), password VARCHAR(255), PRIMARY KEY (id))';
-// db.query(sql, (err, result) =>{
-// 		if(err) throw err;
-// 		console.log(result);
-// 		res.send('table created...')
-// 	});
-// })
+
+
+app.get('/createtable', (req,res) => {
+let sql ='CREATE TABLE players(id int AUTO_INCREMENT, username VARCHAR(255), x int, y int, wood int, health int, PRIMARY KEY (id))';
+db.query(sql, (err, result) =>{
+		if(err) throw err;
+		console.log(result);
+	});
+})
 
 
 
